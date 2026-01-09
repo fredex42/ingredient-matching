@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
@@ -15,6 +17,7 @@ func main() {
 	reference := flag.String("reference", "density_reference.csv", "Path to density reference CSV file")
 	missing := flag.String("missing", "missing_ingredients.csv", "Path to missing ingredients CSV file")
 	limit := flag.Int("limit", 1, "Limit the number of records to process (0 for no limit)")
+	out := flag.String("out", "", "Path to output CSV file for filled missing densities")
 	flag.Parse()
 
 	fmt.Printf("Using %s in %s\n", *model, *region)
@@ -45,5 +48,19 @@ func main() {
 
 	fmt.Printf("Loaded %d missing densities records\n", len(missingRecords))
 
-	ProcessRecords(client, model, referenceRecords, missingRecords, *limit)
+	var csvWriter *csv.Writer = nil
+
+	if out != nil && *out != "" {
+		fmt.Printf("Writing output to %s\n", *out)
+		writer, err := os.Create(*out)
+		if err != nil {
+			fmt.Printf("Error creating output file: %v\n", err)
+			return
+		}
+		defer writer.Close()
+
+		csvWriter = csv.NewWriter(writer)
+		defer csvWriter.Flush()
+	}
+	ProcessRecords(client, model, referenceRecords, missingRecords, *limit, csvWriter)
 }

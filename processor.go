@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -70,7 +72,7 @@ func FindReferenceIngredient(references []*DensityReferenceRecord, name string) 
 	return nil
 }
 
-func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references []*DensityReferenceRecord, missing []*MissingDensitiesRecord, limit int) {
+func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references []*DensityReferenceRecord, missing []*MissingDensitiesRecord, limit int, writer *csv.Writer) {
 	basePrompt := makeBasePrompt(references)
 
 	for i, record := range missing {
@@ -85,12 +87,14 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 			NewClaudeAssistantMessage("Confidence:"),
 		}
 
-		for attempts := 0; attempts < 3; attempts++ {
+		var structuredResult *StructuredResponse = nil
+
+		for attempts := 0; attempts < 5; attempts++ {
 			request := &ClaudeRequest{
 				AnthropicVersion:  "bedrock-2023-05-31",
 				Messages:          messageStream,
 				MaxTokensToSample: aws.Int(10000),
-				Temperature:       aws.Float32(0),
+				Temperature:       aws.Float32(0.3),
 			}
 
 			response, err := SendClaudeRequest(context.Background(), brClient, modelId, request)
@@ -99,7 +103,7 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 				break
 			}
 
-			structuredResult, err := ParseResponse(response)
+			structuredResult, err = ParseResponse(response)
 			if err != nil {
 				fmt.Printf("Error parsing response for record %d (%s): %v\n", i+1, record.Ingredient, err)
 				messageStream = append(messageStream, &ClaudeMessage{
@@ -128,6 +132,31 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 			} else {
 				fmt.Printf("Record %d (%s): No match found\n", i+1, record.Ingredient)
 				break
+			}
+		}
+
+		if structuredResult != nil {
+			updated := *record
+			updated.MatchTo = structuredResult.MatchTo
+			updated.Confidence = structuredResult.Confidence
+
+			switch updated.Confidence {
+			case "LOW":
+				updated.Action = aws.String("REVIEW")
+			case "NO MATCH":
+				updated.Action = aws.String("NO MATCH")
+			case "MEDIUM", "HIGH":
+				updated.Action = aws.String("AUTO-FILL")
+			default:
+
+			}
+
+			if writer != nil {
+				row := updated.to_csv()
+				writer.Write(row)
+				writer.Flush()
+			} else {
+				log.Printf("No CSV writer provided, not writing output for record %d", i+1)
 			}
 		}
 	}

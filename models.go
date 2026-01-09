@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 )
 
@@ -23,6 +24,32 @@ func (r *DensityReferenceRecord) to_csv() []string {
 	}
 }
 
+func ParseDensityValue(value string) (float32, error) {
+	isRange := regexp.MustCompile(`^\s*([\d.]+)\s*-\s*([\d.]+)\s*$`)
+	singleValue := regexp.MustCompile(`^\s*([\d.]+)\s*$`)
+
+	if isRange.MatchString(value) {
+		matches := isRange.FindStringSubmatch(value)
+		if len(matches) != 3 {
+			return 0, fmt.Errorf("could not parse range: %s", value)
+		}
+		parsedValue, err := strconv.ParseFloat(matches[2], 32)
+		return float32(parsedValue), err
+	} else if singleValue.MatchString(value) {
+		matches := singleValue.FindStringSubmatch(value)
+		if len(matches) != 2 {
+			return 0, fmt.Errorf("could not parse value: %s", value)
+		}
+		parsedValue, err := strconv.ParseFloat(matches[1], 32)
+		if err != nil {
+			return 0, err
+		}
+		return float32(parsedValue), nil
+	} else {
+		return 0, fmt.Errorf("could not parse value: %s", value)
+	}
+}
+
 func ParseDensityReferenceRecord(row []string) (*DensityReferenceRecord, error) {
 	if len(row) != 5 {
 		return nil, fmt.Errorf("unexpected number of fields: %d", len(row))
@@ -32,7 +59,7 @@ func ParseDensityReferenceRecord(row []string) (*DensityReferenceRecord, error) 
 	if err != nil {
 		return nil, fmt.Errorf("invalid id: %v", err)
 	}
-	density, err := strconv.ParseFloat(row[3], 32)
+	density, err := ParseDensityValue(row[3])
 	if err != nil {
 		return nil, fmt.Errorf("invalid density: %v", err)
 	}
@@ -53,6 +80,7 @@ type MissingDensitiesRecord struct {
 	MatchTo    *string  `json:"match_to"`
 	Density    *float32 `json:"density"`
 	Example    string   `json:"example"`
+	Confidence string   `json:"confidence"`
 }
 
 // Convert a single record to CSV row
@@ -76,12 +104,13 @@ func (r *MissingDensitiesRecord) to_csv() []string {
 		matchTo,
 		density,
 		r.Example,
+		r.Confidence,
 	}
 }
 
 // Parse a CSV row into a record
 func ParseMissingDensitiesRecord(row []string) (*MissingDensitiesRecord, error) {
-	if len(row) != 6 {
+	if len(row) < 6 {
 		return nil, fmt.Errorf("unexpected number of fields: %d", len(row))
 	}
 
@@ -111,6 +140,11 @@ func ParseMissingDensitiesRecord(row []string) (*MissingDensitiesRecord, error) 
 		matchTo = nil
 	}
 
+	confidence := ""
+	if len(row) > 6 {
+		confidence = row[6]
+	}
+
 	return &MissingDensitiesRecord{
 		Popularity: popularity,
 		Ingredient: row[1],
@@ -118,5 +152,6 @@ func ParseMissingDensitiesRecord(row []string) (*MissingDensitiesRecord, error) 
 		MatchTo:    matchTo,
 		Density:    density,
 		Example:    row[5],
+		Confidence: confidence,
 	}, nil
 }

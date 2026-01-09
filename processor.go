@@ -38,7 +38,7 @@ type StructuredResponse struct {
 }
 
 func ParseResponse(response *ClaudeMessageResponse) (*StructuredResponse, error) {
-	parser := regexp.MustCompile(`\s*(HIGH|MEDIUM|LOW)\s*,\s*Match\s*(.+)\s*`)
+	parser := regexp.MustCompile(`\s*:*\s*(HIGH|MEDIUM|LOW)\s*,\s*Match\s*:*\s*(.+)\s*`)
 
 	var structuredResponse StructuredResponse
 	if response == nil || len(response.Content) == 0 || response.Content[0].Text == nil {
@@ -80,10 +80,11 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 			break
 		}
 
-		prompt := basePrompt + "\n\nWhat is the best match for the ingredient: " + record.Ingredient + "?"
+		prompt := "What is the best match for the ingredient: " + record.Ingredient + "?"
 
 		messageStream := []*ClaudeMessage{
-			NewClaudeUserMessage(prompt),
+			NewClaudeUserMessage(basePrompt, true),
+			NewClaudeUserMessage(prompt, false),
 			NewClaudeAssistantMessage("Confidence:"),
 		}
 
@@ -110,7 +111,7 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 					Role:    ROLE_ASSISTANT,
 					Content: response.Content,
 				})
-				messageStream = append(messageStream, NewClaudeUserMessage("Your response could not be parsed. Please respond in the format 'Confidence: <confidence>, Match <ingredient>' or 'NO MATCH'."))
+				messageStream = append(messageStream, NewClaudeUserMessage("Your response could not be parsed. Please respond in the format 'Confidence: <confidence>, Match <ingredient>' or 'NO MATCH'.", false))
 				continue
 			}
 
@@ -127,7 +128,8 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 						Role:    ROLE_ASSISTANT,
 						Content: response.Content,
 					})
-					messageStream = append(messageStream, NewClaudeUserMessage(fmt.Sprintf("The ingredient '%s' does not appear in the reference list.  Please try again.", *structuredResult.MatchTo)))
+					messageStream = append(messageStream, NewClaudeUserMessage(fmt.Sprintf("The ingredient '%s' does not appear in the reference list.  Please try again.", *structuredResult.MatchTo), false))
+					structuredResult = nil
 				}
 			} else {
 				fmt.Printf("Record %d (%s): No match found\n", i+1, record.Ingredient)

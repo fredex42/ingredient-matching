@@ -13,9 +13,16 @@ import (
 
 const TYPE_TEXT = "text"
 
+const CACHE_CONTROL_EPHEMERAL = "ephemeral"
+
+type CacheControlBlock struct {
+	Type string `json:"type"`
+}
+
 type ContentBlock struct {
-	Type string  `json:"type"`
-	Text *string `json:"text,omitempty"`
+	Type         string             `json:"type"`
+	Text         *string            `json:"text,omitempty"`
+	CacheControl *CacheControlBlock `json:"cache_control,omitempty"`
 }
 
 const ROLE_USER = "user"
@@ -28,10 +35,15 @@ type ClaudeMessage struct {
 	// Omitting optional request parameters
 }
 
-func NewClaudeUserMessage(text string) *ClaudeMessage {
+func NewClaudeUserMessage(text string, cachepoint bool) *ClaudeMessage {
 	contentBlock := ContentBlock{
 		Type: TYPE_TEXT,
 		Text: &text,
+	}
+	if cachepoint {
+		contentBlock.CacheControl = &CacheControlBlock{
+			Type: CACHE_CONTROL_EPHEMERAL,
+		}
 	}
 	return &ClaudeMessage{
 		Role:    ROLE_USER,

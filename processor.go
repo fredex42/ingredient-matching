@@ -20,6 +20,14 @@ func makeBasePrompt(references []*DensityReferenceRecord) string {
 	"tomato, chopped" should be considered a match. However, "tomato sauce" and "tomato paste" are different ingredients and
 	should not be considered a match for "tomatoes".
 
+	Do not confuse fresh and dried ingredients. For example, "dried basil" and "fresh basil" are different ingredients.  Also,
+	"dried potato flake" and "potato" are different ingredients as are "potato powder" and "potato".
+	
+	Use the following guidelines when determining your confidence level:
+	- HIGH: The ingredients are clearly the same, just worded differently (e.g., "chopped tomatoes" vs "tomato, chopped").
+	- MEDIUM: The ingredients are similar but there are slight differences that may or may not be significant (e.g., "whole milk" vs "2% milk").
+	- LOW: The ingredients have some similarities but also notable differences that could affect their equivalence (e.g., "tomato sauce" vs "tomatoes").
+
 	You must ONLY use the ingredients in the reference list to make your match.  Do NOT attempt to use any external knowledge.
 	
 	Your response should be in the form "Confidence: <confidence>, Match <ingredient>" where <confidence> is one of "HIGH", "MEDIUM", or "LOW". If there is no good match, respond with "NO MATCH".`
@@ -38,7 +46,7 @@ type StructuredResponse struct {
 }
 
 func ParseResponse(response *ClaudeMessageResponse) (*StructuredResponse, error) {
-	parser := regexp.MustCompile(`\s*:*\s*(HIGH|MEDIUM|LOW)\s*,\s*Match\s*:*\s*(.+)\s*`)
+	parser := regexp.MustCompile(`\s*:*\s*(HIGH|MEDIUM|LOW)\s*,\s*Match\s*:*\s*\**(.+)\**\s*`)
 
 	var structuredResponse StructuredResponse
 	if response == nil || len(response.Content) == 0 || response.Content[0].Text == nil {
@@ -89,6 +97,7 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 		}
 
 		var structuredResult *StructuredResponse = nil
+		var previousBestResult *StructuredResponse = nil
 
 		for attempts := 0; attempts < 5; attempts++ {
 			request := &ClaudeRequest{
@@ -121,7 +130,17 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 					record.MatchTo = structuredResult.MatchTo
 					record.Density = aws.Float32(maybeReference.Density)
 					fmt.Printf("Record %d (%s): Matched to %s with density %f (confidence: %s)\n", i+1, record.Ingredient, *record.MatchTo, *record.Density, structuredResult.Confidence)
-					break
+
+					if structuredResult.Confidence == "LOW" {
+						messageStream = append(messageStream, NewClaudeUserMessage(
+							fmt.Sprintf("Check if there are not any more generic matches for '%s' that might fit better than '%s'", record.Ingredient, *structuredResult.MatchTo),
+							false),
+						)
+						previousBestResult = structuredResult
+						structuredResult = nil
+					} else {
+						break
+					}
 				} else {
 					fmt.Printf("Record %d (%s): Claimed match to %s not found in references\n", i+1, record.Ingredient, *structuredResult.MatchTo)
 					messageStream = append(messageStream, &ClaudeMessage{
@@ -135,6 +154,11 @@ func ProcessRecords(brClient *bedrockruntime.Client, modelId *string, references
 				fmt.Printf("Record %d (%s): No match found\n", i+1, record.Ingredient)
 				break
 			}
+		}
+
+		if previousBestResult != nil && (structuredResult == nil || structuredResult.Confidence == "NO MATCH") {
+			fmt.Printf("Record %d (%s): Using previous best match due to low confidence\n", i+1, record.Ingredient)
+			structuredResult = previousBestResult
 		}
 
 		if structuredResult != nil {

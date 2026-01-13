@@ -51,13 +51,19 @@ func ParseDensityValue(value string) (float32, error) {
 }
 
 func ParseDensityReferenceRecord(row []string) (*DensityReferenceRecord, error) {
-	if len(row) != 5 {
+	if len(row) < 5 {
 		return nil, fmt.Errorf("unexpected number of fields: %d", len(row))
 	}
 
-	id, err := strconv.Atoi(row[0])
-	if err != nil {
-		return nil, fmt.Errorf("invalid id: %v", err)
+	var id int
+	var err error
+	if row[0] == "" {
+		id = -1
+	} else {
+		id, err = strconv.Atoi(row[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid id: %v", err)
+		}
 	}
 	density, err := ParseDensityValue(row[3])
 	if err != nil {

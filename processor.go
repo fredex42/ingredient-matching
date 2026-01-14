@@ -13,20 +13,26 @@ import (
 )
 
 func makeBasePrompt(references []*DensityReferenceRecord) string {
-	prompt := `Your job is to cross-reference ingredients between two lists.  You will be presented with an unknown ingredient and
-	you must choose the best matching ingredient from the reference list. If there is no good match, you should respond with "NO MATCH".
+	prompt := `Your job is to cross-reference ingredients between two lists.  We are trying to perform weight->volume
+	conversions, so the purpose of matching is not to find a valid substitute per se but something of the same density
+	and consistency.  Flavour profile is irrelevant.
+
+	You will be presented with an unknown ingredient and you must choose the best matching ingredient from the reference list.
+	If there is no good match, you should respond with "NO MATCH".
 
 	When choosing a match, consider that ingredients may be described in different ways. For example, "chopped tomatoes" and
 	"tomato, chopped" should be considered a match. However, "tomato sauce" and "tomato paste" are different ingredients and
 	should not be considered a match for "tomatoes".
 
-	Do not confuse fresh and dried ingredients. For example, "dried basil" and "fresh basil" are different ingredients.  Also,
-	"dried potato flake" and "potato" are different ingredients as are "potato powder" and "potato".
+	Do not confuse fresh and dried ingredients. For example, "dried basil" and "fresh basil" are different ingredients; as are
+	dried fruits and fresh fruits.
+	Also, "dried potato flake" and "potato" are different ingredients as are "potato powder" and "potato".
 	
 	Use the following guidelines when determining your confidence level:
 	- HIGH: The ingredients are clearly the same, just worded differently (e.g., "chopped tomatoes" vs "tomato, chopped").
 	- MEDIUM: The ingredients are similar but there are slight differences that may or may not be significant (e.g., "whole milk" vs "2% milk").
-	- LOW: The ingredients have some similarities but also notable differences that could affect their equivalence (e.g., "tomato sauce" vs "tomatoes").
+	- LOW: The ingredients have some similarities but also notable differences that could affect their densities (e.g., "tomato sauce" vs "tomatoes",
+	"mashed potato" vs "potatoes").
 
 	You must ONLY use the ingredients in the reference list to make your match.  Do NOT attempt to use any external knowledge.
 	
@@ -72,8 +78,11 @@ func ParseResponse(response *ClaudeMessageResponse) (*StructuredResponse, error)
 }
 
 func FindReferenceIngredient(references []*DensityReferenceRecord, name string) *DensityReferenceRecord {
+	stripJunk := regexp.MustCompile(`\**`)
+	nameToSearch := stripJunk.ReplaceAllString(name, "")
+
 	for _, ref := range references {
-		if ref.Normalised == name {
+		if ref.Normalised == nameToSearch {
 			return ref
 		}
 	}
